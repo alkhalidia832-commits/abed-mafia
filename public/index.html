@@ -27,14 +27,22 @@ hr{border:0;border-top:1px solid #2d2939;margin:14px 0}
 #top{position:fixed;top:calc(10px + env(safe-area-inset-top,0px));right:12px;display:none}
 #card{height:200px;border-radius:16px;margin:14px 0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:repeating-linear-gradient(45deg,#2a0a12,#2a0a12 10px,#1e0710 10px,#1e0710 20px);border:2px solid var(--ac);font-size:60px;user-select:none;-webkit-user-select:none}
 #card small{font-size:14px;padding:0 12px;margin-top:6px}#card b{font-size:26px}
+#chat{position:fixed;left:0;right:0;bottom:0;height:52vh;background:var(--pn);border-top:2px solid var(--ac);display:none;flex-direction:column;z-index:5;padding-bottom:env(safe-area-inset-bottom,0px)}
+#chat.on{display:flex}
+#tabs{display:flex;gap:4px;padding:6px 8px;align-items:center}#tabs button{padding:8px 14px;margin:0}#tabs .x{margin-right:auto}
+#log{flex:1;overflow:auto;padding:6px 12px;font-size:15px;text-align:right}
+#log div{margin:4px 0;word-break:break-word}#log b{color:#ffd23f}#log .me b{color:#7be0a0}
+#row{display:flex;gap:6px;padding:8px}#row input{margin:0;text-align:right;flex:1}#row button{margin:0}
+#badge{background:#ffd23f;color:#000;border-radius:10px;padding:0 6px;margin-right:4px;font-size:12px}
 #toast{position:fixed;top:70px;left:50%;transform:translateX(-50%);background:#c8102e;padding:8px 16px;border-radius:10px;display:none;z-index:9}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="lobby"><div style="font-size:13px;color:var(--mu)">كود الغرفة · شاركه مع اللاعبين</div><b id="rc"></b><div id="ppl"></div></div>
-<div id="top"><button class="g" id="cardbtn">🃏 كارتي</button></div>
+<div id="top"><button class="g" id="chatbtn">💬<span id="badge"></span></button><button class="g" id="cardbtn">🃏 كارتي</button></div>
 <div id="ui"><div id="msg"></div><div id="sub"></div><div id="btns"></div></div>
+<div id="chat"><div id="tabs"></div><div id="log"></div><div id="row"><input id="ci" maxlength="200" placeholder="اكتب رسالة..."><button id="cs">إرسال</button></div></div>
 <div id="toast"></div>
 
 <div class="ov on" id="home"><div class="box">
@@ -176,13 +184,39 @@ function render(){
   const k=S.players.map(p=>p.id).join();if(k!==key){key=k;buildSeats()}
   const lob=S.phase==='lobby';$('lobby').style.display=lob?'block':'none';$('rc').textContent=S.code;
   $('ppl').textContent=S.players.map(p=>p.name+(p.online?'':' ⚪')).join(' · ');
-  const m=me();$('top').style.display=!lob&&m.role?'block':'none';
+  const m=me();$('top').style.display='block';$('cardbtn').style.display=!lob&&m.role?'inline-block':'none';
   S.players.forEach(p=>{const c=chars[p.id];if(!c)return;
     const rl=p.role&&(S.phase==='end'||!p.alive)?' ('+R[p.role].n+')':'',tl=S.tally[p.id]?' 🗳'+S.tally[p.id]:'';
     const t=p.name+(p.id===S.me?' ⭐':'')+rl+tl;if(c.g.userData.ltxt!==t)drawLabel(c.g,t);
     c.g.userData.b.rotation.x=p.alive?0:-.7;c.g.userData.shirt.color.copy(p.alive?c.g.userData.shirt.userData.col:new THREE.Color(0x555555))});
-  tg=S.phase==='night'?1:0;if(sel&&!needTarget())sel=null;panel();
+  tg=S.phase==='night'?1:0;if(sel&&!needTarget())sel=null;panel();chatUpdate();
 }
+// ---------- chat
+let ctab='all',copen=false;const seenN={all:0,mafia:0};
+const isMafia=()=>S.phase!=='lobby'&&me().role==='mafia';
+function canWrite(ch){const m=me(),ph=S.phase;
+  if(ch==='all')return ph==='lobby'||ph==='end'||(ph==='day'&&m.alive);
+  return m.role==='mafia'&&m.alive&&(ph==='night'||ph==='day')}
+function chatUpdate(){
+  if(ctab==='mafia'&&!isMafia())ctab='all';
+  const L={all:S.chat,mafia:S.mchat};
+  if(copen)seenN[ctab]=L[ctab].length;
+  const un=['all',...(isMafia()?['mafia']:[])].reduce((a,k)=>a+Math.max(0,L[k].length-seenN[k]),0);
+  $('badge').textContent=un?un:'';
+  $('chat').classList.toggle('on',copen);if(!copen)return;
+  const tabs=$('tabs');tabs.innerHTML='';
+  [['all','💬 الجميع'],...(isMafia()?[['mafia','🔪 المافيا']]:[])].forEach(([k,l])=>{const b=document.createElement('button');
+    const u=Math.max(0,L[k].length-seenN[k]);b.textContent=l+(u?' ('+u+')':'');if(ctab!==k)b.className='g';b.onclick=()=>{ctab=k;chatUpdate()};tabs.appendChild(b)});
+  const x=document.createElement('button');x.textContent='✕';x.className='g x';x.onclick=()=>{copen=false;chatUpdate()};tabs.appendChild(x);
+  const log=$('log');log.innerHTML='';
+  L[ctab].forEach(m=>{const d=document.createElement('div'),b=document.createElement('b');if(m.id===S.me)d.className='me';b.textContent=m.n+': ';d.append(b,document.createTextNode(m.t));log.appendChild(d)});
+  log.scrollTop=log.scrollHeight;
+  const ok=canWrite(ctab);$('ci').disabled=!ok;$('cs').disabled=!ok;
+  $('ci').placeholder=ok?'اكتب رسالة...':(ctab==='all'&&S.phase==='night'?'🌙 الليل صامت':'💀 الكتابة غير متاحة');
+}
+function sendChat(){const t=$('ci').value.trim();if(!t||$('ci').disabled)return;tx({t:'chat',ch:ctab,text:t});$('ci').value=''}
+$('chatbtn').onclick=()=>{copen=!copen;chatUpdate()};
+$('cs').onclick=sendChat;$('ci').addEventListener('keydown',e=>{if(e.key==='Enter')sendChat()});
 // ---------- secret card
 $('cardbtn').onclick=()=>{$('card').innerHTML='❓';$('cardov').classList.add('on')};
 $('cclose').onclick=()=>$('cardov').classList.remove('on');
